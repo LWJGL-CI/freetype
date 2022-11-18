@@ -14,7 +14,7 @@ env:
 jobs:
   linux:
     name: Linux
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -23,27 +23,36 @@ jobs:
           - BUILD: x64
             ARCH: x64
             PACKAGES: gcc #libharfbuzz-dev libbz2-dev zlib1g-dev libpng-dev libbrotli-dev
-            CC: CC=gcc
+            CC: CC=gcc CXX=g++
             STRIP: strip
             #Works with: -DFT_REQUIRE_BROTLI=ON -DFT_REQUIRE_BZIP2=ON -DFT_REQUIRE_HARFBUZZ=ON -DFT_REQUIRE_PNG=ON -DFT_REQUIRE_ZLIB=ON
           - BUILD: arm32
             ARCH: arm32
             CROSS_ARCH: armhf
-            PACKAGES: gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
-            CC: PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${CMAKE_SYSROOT}/usr/lib/arm-linux-gnueabihf/pkgconfig CC=arm-linux-gnueabihf-gcc
+            PACKAGES: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
+            CC: PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${CMAKE_SYSROOT}/usr/lib/arm-linux-gnueabihf/pkgconfig CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++
             STRIP: arm-linux-gnueabihf-strip
           - BUILD: arm64
             ARCH: arm64
             CROSS_ARCH: arm64
-            PACKAGES: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-            CC: PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig CC=aarch64-linux-gnu-gcc
+            PACKAGES: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
+            CC: PKG_CONFIG_PATH=${PKG_CONFIG_PATH}:${CMAKE_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++
             STRIP: aarch64-linux-gnu-strip
     env:
       LWJGL_ARCH: ${{matrix.ARCH}}
     steps:
+      - uses: actions/checkout@master
+        with:
+          repository: harfbuzz/harfbuzz
+          path: harfbuzz
       - uses: actions/checkout@v3
         with:
           fetch-depth: 3
+          path: freetype
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 3
+          path: freetype_without_harfbuzz
       - run: |
           sudo sed -i 's/deb http/deb [arch=amd64,i386] http/' /etc/apt/sources.list
           sudo grep "ubuntu.com/ubuntu" /etc/apt/sources.list | sudo tee /etc/apt/sources.list.d/ports.list
@@ -56,20 +65,37 @@ jobs:
       - run: sudo apt-get -fyq --allow-unauthenticated --no-install-suggests --no-install-recommends install ${{matrix.PACKAGES}} -o Dpkg::Options::="--force-overwrite"
         name: Install dependencies
       - run: |
+          cd freetype_without_harfbuzz
           ${{matrix.CC}} cmake . -B build -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
-        name: Configure build
-      - run: |
           cd build
           cmake --build . --parallel
           ${{matrix.STRIP}} libfreetype.so
-        name: Build
-      - run: aws s3 cp build/libfreetype.so s3://lwjgl-build/nightly/linux/${{matrix.ARCH}}/ $S3_PARAMS
-        name: Upload artifact
+          sudo make install
+        name: Install freetype without harfbuzz
       - run: |
-          git log --first-parent --pretty=format:%H HEAD~2..HEAD~1 > libfreetype.so.git
-          aws s3 cp libfreetype.so.git s3://lwjgl-build/nightly/linux/${{matrix.ARCH}}/ $S3_PARAMS
-        name: Upload git revision
-
+          cd harfbuzz
+          ${{matrix.CC}} cmake . -B build -DHB_HAVE_FREETYPE=true -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
+          cd build
+          cmake --build . --parallel
+          ${{matrix.STRIP}} libharfbuzz.so
+          sudo make install
+        name: Install harfbuzz with freetype
+      - run: |
+          cd freetype
+          rm -rf build
+          ${{matrix.CC}} cmake . -B build -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON -DFT_REQUIRE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
+          cd build
+          cmake --build . --parallel
+          ${{matrix.STRIP}} libfreetype.so
+        name: Build freetype with harfbuzz
+      - uses: actions/upload-artifact@v3
+        with:
+          name: freetype-linux-${{matrix.ARCH}}
+          path: freetype/build
+      - uses: actions/upload-artifact@v3
+        with:
+          name: harfbuzz-linux-${{matrix.ARCH}}
+          path: harfbuzz/build
   macos:
     name: macOS
     runs-on: macos-latest
@@ -79,28 +105,55 @@ jobs:
         ARCH: [x64, arm64]
         include:
           - ARCH: x64
-            CMAKE_PARAMS: -DCMAKE_OSX_DEPLOYMENT_TARGET=10.9 -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON
-            #Works with: -DFT_REQUIRE_BROTLI=ON -DFT_REQUIRE_BZIP2=ON -DFT_REQUIRE_HARFBUZZ=ON -DFT_REQUIRE_PNG=ON -DFT_REQUIRE_ZLIB=ON
+            CMAKE_PARAMS: -DCMAKE_OSX_DEPLOYMENT_TARGET=10.9
           - ARCH: arm64
-            CMAKE_PARAMS: -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_OSX_ARCHITECTURES=arm64 -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON
+            CMAKE_PARAMS: -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_OSX_ARCHITECTURES=arm64
     steps:
+      - uses: actions/checkout@master
+        with:
+          repository: harfbuzz/harfbuzz
+          path: harfbuzz
       - uses: actions/checkout@v3
         with:
           fetch-depth: 3
-      - run: cmake . -B build ${{matrix.CMAKE_PARAMS}} -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
-        name: Configure build
+          path: freetype
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 3
+          path: freetype_without_harfbuzz
       - run: |
+          cd freetype_without_harfbuzz
+          cmake . -B build ${{matrix.CMAKE_PARAMS}} -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
           cd build
           cmake --build . --parallel
           strip -u -r libfreetype.dylib
-        name: Build
-      - run: aws s3 cp build/libfreetype.dylib s3://lwjgl-build/nightly/macosx/${{matrix.ARCH}}/ $S3_PARAMS
-        name: Upload artifact
+          sudo make install
+        name: Build and install freetype without harbuzz
       - run: |
-          git log --first-parent --pretty=format:%H HEAD~2..HEAD~1 > libfreetype.dylib.git
-          aws s3 cp libfreetype.dylib.git s3://lwjgl-build/nightly/macosx/${{matrix.ARCH}}/ $S3_PARAMS
-        name: Upload git revision
-
+          cd harfbuzz
+          ${{matrix.CC}} cmake . -B build ${{matrix.CMAKE_PARAMS}} -DHB_HAVE_FREETYPE=true -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
+          cd build
+          cmake --build . --parallel
+          strip -u -r libharfbuzz.dylib
+          sudo make install
+        name: Build and install harfbuzz with freetype
+      - run: |
+          cd freetype
+          rm -rf build        
+          cmake . -B build ${{matrix.CMAKE_PARAMS}} -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON -DFT_REQUIRE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_ZLIB=ON -DBUILD_SHARED_LIBS=true -DCMAKE_BUILD_TYPE=Release
+          cd build
+          cmake --build . --parallel
+          strip -u -r libfreetype.dylib
+        name: Build freetype with harbuzz
+      - uses: actions/upload-artifact@v3
+        with:
+          name: freetype-macos-${{matrix.ARCH}}
+          path: freetype/build
+      - uses: actions/upload-artifact@v3
+        with:
+          name: harfbuzz-macos-${{matrix.ARCH}}
+          path: harfbuzz/build
+                    
   windows:
     name: Windows
     runs-on: windows-latest
@@ -113,36 +166,91 @@ jobs:
             MSVC_ARCH: amd64_x86
             PLATFORM: Win32
             MESON_PARAMS:
+            PKGCONF_ARCH: x86-windows
           - ARCH: x64
             MSVC_ARCH: amd64
             PLATFORM: x64
             MESON_PARAMS:
-            #Works with: -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=disabled -Dpng=enabled -Dzlib=enabled
+            PKGCONF_ARCH: x64-windows
           - ARCH: arm64
             MSVC_ARCH: amd64_arm64
             PLATFORM: ARM64
-            MESON_PARAMS: --cross-file lwjgl_arm64cl.cross
+            MESON_PARAMS: --cross-file ..\freetype\lwjgl_windows_arm64cl.cross
+            PKGCONF_ARCH: x64-windows
     steps:
+      - uses: actions/checkout@master
+        with:
+          repository: Microsoft/vcpkg
+          path: vcpkg
+      - uses: actions/checkout@master
+        with:
+          repository: harfbuzz/harfbuzz
+          path: harfbuzz
       - uses: actions/checkout@v3
         with:
           fetch-depth: 3
+          path: freetype
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 3
+          path: freetype_without_harfbuzz
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{matrix.MSVC_ARCH}}
-      - run: pip3 install meson
-        shell: cmd
-        name: Install dependencies
-      - run: meson setup build -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=disabled -Dpng=disabled -Dzlib=disabled -Dbackend=vs2022 -Dbuildtype=release -Dstrip=true ${{matrix.MESON_PARAMS}}
-        shell: cmd
-        name: Configure build
-      - run: meson compile --verbose -C build
-        shell: cmd
-        name: Build
-      - run: aws s3 cp build\freetype-6.dll s3://lwjgl-build/nightly/windows/${{matrix.ARCH}}/freetype.dll ${{env.S3_PARAMS}}
-        shell: cmd
-        name: Upload artifact
       - run: |
-          git log --first-parent --pretty=format:%%H HEAD~2..HEAD~1 > freetype.git
-          aws s3 cp freetype.git s3://lwjgl-build/nightly/windows/${{matrix.ARCH}}/ ${{env.S3_PARAMS}}
+          python -m pip install -U pip
+          pip install --upgrade meson ninja fonttools cmake
         shell: cmd
-        name: Upload git revision
+        name: Install Dependencies
+      - run: |
+          vcpkg\bootstrap-vcpkg.sh
+          vcpkg install pkgconf --triplet ${{matrix.PKGCONF_ARCH}}
+          cp C:/vcpkg/packages/pkgconf_${{matrix.PKGCONF_ARCH}}/tools/pkgconf/pkgconf.exe C:/vcpkg/packages/pkgconf_${{matrix.PKGCONF_ARCH}}/tools/pkgconf/pkg-config.exe 
+          tree C:/vcpkg/packages/pkgconf_${{matrix.PKGCONF_ARCH}} /f
+        shell: cmd
+        name: Install VCPKG
+      - run: |
+          cd freetype_without_harfbuzz
+          meson setup ${{matrix.MESON_PARAMS}} -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=disabled -Dpng=disabled -Dzlib=disabled -Dbackend=vs2022 -Dbuildtype=release -Dstrip=true --prefix=%cd%\release build
+          meson compile -C build
+          meson install -C build
+        shell: cmd
+        name: Build and install freetype without harfbuzz
+      - run: |
+          set PATH=C:/vcpkg/packages/pkgconf_${{matrix.PKGCONF_ARCH}}/tools/pkgconf;%PATH%
+          set PATH=%PATH%;%cd%\freetype_without_harfbuzz\release\lib
+          set INCLUDE=%INCLUDE%;%cd%\freetype_without_harfbuzz\release\include
+          set PKG_CONFIG_PATH=%PKG_CONFIG_PATH%;%cd%\freetype_without_harfbuzz\release\lib\pkgconfig
+          cd harfbuzz
+          meson setup ${{matrix.MESON_PARAMS}} --wrap-mode=default --buildtype=release -Dfreetype=enabled -Dgdi=enabled -Ddirectwrite=enabled --prefix=%cd%\release build
+          meson compile -C build
+          meson install -C build
+        shell: cmd
+        name: Build and install harfbuzz with freetype
+      - run: |
+          set PATH=C:/vcpkg/packages/pkgconf_${{matrix.PKGCONF_ARCH}}/tools/pkgconf;%PATH%
+          # Freetype without harfbuzz
+          set PATH=%PATH%;%cd%\freetype_without_harfbuzz\release\lib
+          set INCLUDE=%INCLUDE%;%cd%\freetype_without_harfbuzz\release\include
+          set PKG_CONFIG_PATH=%PKG_CONFIG_PATH%;%cd%\freetype_without_harfbuzz\release\lib\pkgconfig
+          # Harfbuzz with freetype
+          set PATH=%PATH%;%cd%\harfbuzz\release\lib
+          set INCLUDE=%INCLUDE%;%cd%\harfbuzz\release\include
+          set PKG_CONFIG_PATH=%PKG_CONFIG_PATH%;%cd%\harfbuzz\release\lib\pkgconfig
+          cd freetype
+          meson setup ${{matrix.MESON_PARAMS}} -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=enabled -Dpng=disabled -Dzlib=disabled -Dbackend=vs2022 -Dbuildtype=release -Dstrip=true --prefix=%cd%\release build
+          meson compile -C build
+          meson install -C build
+        shell: cmd
+        name: Build and install freetype with harfbuzz
+      - uses: actions/upload-artifact@v3
+        with:
+          name: harfbuzz-windows-${{matrix.ARCH}}
+          path: harfbuzz\release
+      - uses: actions/upload-artifact@v3
+        with:
+          name: freetype-windows-${{matrix.ARCH}}
+          path: freetype\release

@@ -1,0 +1,14 @@
+[binaries]
+c = 'cl'
+cpp = 'cl'
+fc = 'false'
+ar = 'lib'
+windres = 'rc'
+pkgconfig = 'C:/vcpkg/packages/pkgconf_x64-windows/tools/pkgconf/pkg-config.exe'
+
+[host_machine]
+system = 'windows'
+cpu_family = 'aarch64'
+cpu = 'armv8'
+endian = 'little'
+
