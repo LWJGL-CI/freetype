@@ -12,7 +12,7 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   S3_PARAMS: --cache-control "public,must-revalidate,proxy-revalidate,max-age=0"
-  FREETYPE_PARAMS: --wrap-mode=default --force-fallback-for=harfbuzz,libpng,zlib -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=enabled -Dpng=enabled -Dzlib=system -Dtests=disabled -Dbuildtype=release -Dfreetype2:zlib=disabled -Dfreetype2:png=disabled -Dharfbuzz:experimental_api=true -Db_lto=true -Db_ndebug=true -Derror_strings=true
+  FREETYPE_PARAMS: --wrap-mode=default --force-fallback-for=harfbuzz,libpng,zlib -Dbrotli=disabled -Dbzip2=disabled -Dharfbuzz=enabled -Dpng=enabled -Dzlib=system -Dtests=disabled -Dbuildtype=release -Dfreetype2:zlib=disabled -Dfreetype2:png=disabled -Dharfbuzz:experimental_api=true -Dharfbuzz:glib=disabled -Db_lto=true -Db_ndebug=true -Derror_strings=true
 
 jobs:
   linux:
