@@ -365,9 +365,14 @@ if harfbuzz_opt == 'enabled' or harfbuzz_opt == 'auto'
   else
     # LWJGL: This is a workaround to create an "internal" meson dependency, which is the only one
     #        that supports as_link_whole. We need that to keep all HarfBuzz functions.
+    # , 'freetype2:libname=freetype-hb'
+    harfbuzz_options = ['default_library=static', 'freetype=enabled', 'tests=disabled', 'benchmark=disabled', 'docs=disabled']
+    if host_machine.system() == 'darwin'
+      harfbuzz_options += ['freetype2:libname=freetype-hb']
+    endif
     harfbuzz_project = subproject('harfbuzz',
         required: true,
-        default_options: ['default_library=static', 'freetype=enabled', 'freetype2:libname=freetype-hb', 'tests=disabled', 'benchmark=disabled', 'docs=disabled'])
+        default_options: harfbuzz_options)
     harfbuzz_dep = harfbuzz_project.get_variable('libharfbuzz_dep').as_link_whole()
   endif
   if harfbuzz_dep.found()

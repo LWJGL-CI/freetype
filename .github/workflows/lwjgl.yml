@@ -59,7 +59,7 @@ jobs:
       - name: Install FreeType dependencies
         run: |
           yum -y install ninja-build
-          pip3 install meson==1.7.0
+          pip3 install meson
       - name: Configure build
         run: |
           source scl_source enable devtoolset-11 || true
@@ -235,7 +235,6 @@ jobs:
       # See https://github.com/actions/runner-images/issues/5459 for details. We haven't encountered this before
       # because Meson uses .a for static MSVC libraries, instead of the usual .lib suffix.
       - name: Install dependencies
-        #pip3 install meson==1.9.0
         run: |
           pip3 install meson
           rmdir C:\Strawberry /s /q
